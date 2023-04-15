@@ -6,7 +6,6 @@ LABEL org.opencontainers.image.source="https://github.com/giovtorres/slurm-docke
       org.label-schema.docker.cmd="docker-compose up -d" \
       maintainer="Giovanni Torres"
 
-ARG SLURM_TAG=slurm-21-08-6-1
 ARG GOSU_VERSION=1.11
 
 RUN set -ex \
@@ -15,6 +14,10 @@ RUN set -ex \
     && yum -y install dnf-plugins-core \
     && yum config-manager --set-enabled powertools \
     && yum -y install \
+       autoconf \
+       automake \
+       glib2-devel \
+       gtk2-devel \
        wget \
        bzip2 \
        perl \
@@ -52,9 +55,11 @@ RUN set -ex \
     && chmod +x /usr/local/bin/gosu \
     && gosu nobody true
 
+COPY ./submodules/slurm /slurm
+
 RUN set -x \
-    && git clone -b ${SLURM_TAG} --single-branch --depth=1 https://github.com/SchedMD/slurm.git \
-    && pushd slurm \
+    && pushd /slurm \
+    && autoreconf \
     && ./configure --enable-debug --prefix=/usr --sysconfdir=/etc/slurm \
         --with-mysql_config=/usr/bin  --libdir=/usr/lib64 \
     && make install \
@@ -63,7 +68,6 @@ RUN set -x \
     && install -D -m644 etc/slurmdbd.conf.example /etc/slurm/slurmdbd.conf.example \
     && install -D -m644 contribs/slurm_completion_help/slurm_completion.sh /etc/profile.d/slurm_completion.sh \
     && popd \
-    && rm -rf slurm \
     && groupadd -r --gid=990 slurm \
     && useradd -r -g slurm --uid=990 slurm \
     && mkdir /etc/sysconfig/slurm \
@@ -85,14 +89,18 @@ RUN set -x \
     && chown -R slurm:slurm /var/*/slurm* \
     && /sbin/create-munge-key
 
-COPY slurm.conf /etc/slurm/slurm.conf
-COPY slurmdbd.conf /etc/slurm/slurmdbd.conf
+COPY ./submodules/slurm-docker-cluster/slurm.conf /etc/slurm/slurm.conf
+COPY ./submodules/slurm-docker-cluster/slurmdbd.conf /etc/slurm/slurmdbd.conf
 RUN set -x \
     && chown slurm:slurm /etc/slurm/slurmdbd.conf \
     && chmod 600 /etc/slurm/slurmdbd.conf
 
+# create users
+RUN groupadd --gid 1000 user \
+    && useradd --gid user --uid 1001 user1 \
+    && useradd --gid user --uid 1002 user2
 
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY ./submodules/slurm-docker-cluster/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 CMD ["slurmdbd"]
